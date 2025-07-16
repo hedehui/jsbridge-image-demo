@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>图片获取对比 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    button { margin: 10px 5px; padding: 10px 20px; font-size: 16px; }
+    img { max-width: 100%; margin-top: 20px; border: 1px solid #ddd; }
+    .section { margin-top: 30px; }
+    pre { background: #f0f0f0; padding: 10px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+
+  <h2>📸 图片获取性能对比（Base64 vs 路径）</h2>
+
+  <div class="section">
+    <button onclick="getImage('path')">通过路径获取图片</button>
+    <button onclick="getImage('base64')">通过 Base64 获取图片</button>
+  </div>
+
+  <div class="section">
+    <h3>🖼 预览</h3>
+    <img id="preview" alt="图片将显示在此" />
+  </div>
+
+  <div class="section">
+    <h3>📊 性能日志</h3>
+    <pre id="log">等待操作中...</pre>
+  </div>
+
+  <script>
+    window.JSBridge = {
+      _callbacks: {},
+      callHandler(method, params = {}, callback) {
+        const callbackId = method + '_' + Date.now();
+        this._callbacks[callbackId] = callback;
+        const message = { method, params, callbackId };
+
+        if (window.webkit?.messageHandlers?.JSBridge) {
+          window.webkit.messageHandlers.JSBridge.postMessage(message);
+        } else if (window.JSBridgeAndroid) {
+          window.JSBridgeAndroid.callHandler(method, JSON.stringify({ ...params, callbackId }));
+        } else if (window.harmonyPostMessage) {
+          window.harmonyPostMessage(JSON.stringify(message));
+        } else {
+          alert("当前平台不支持 JSBridge");
+        }
+      },
+      _nativeCallback(callbackId, data) {
+        if (this._callbacks[callbackId]) {
+          this._callbacks[callbackId](data);
+          delete this._callbacks[callbackId];
+        }
+      }
+    };
+
+    function getImage(mode) {
+      const log = document.getElementById('log');
+      const img = document.getElementById('preview');
+      img.src = '';
+      log.innerText = `🔄 正在获取图片（${mode === 'base64' ? 'Base64' : '路径'}模式）...`;
+
+      const start = performance.now();
+
+      JSBridge.callHandler('getImage', { mode: mode }, function (res) {
+        const receiveTime = performance.now();
+        if (res.code === 0 && res.data) {
+          if (mode === 'base64') {
+            img.src = 'data:image/jpeg;base64,' + res.data.base64;
+          } else {
+            img.src = res.data.path;
+          }
+
+          img.onload = () => {
+            const end = performance.now();
+            log.innerText =
+              `✅ 图片加载完成\n` +
+              `JSBridge 响应耗时: ${(receiveTime - start).toFixed(2)}ms\n` +
+              `图片渲染耗时: ${(end - receiveTime).toFixed(2)}ms\n` +
+              `总耗时: ${(end - start).toFixed(2)}ms`;
+          };
+        } else {
+          log.innerText = '❌ 获取失败：' + res.msg;
+        }
+      });
+    }
+  </script>
+</body>
+</html>
